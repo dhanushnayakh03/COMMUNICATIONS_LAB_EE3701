@@ -1,8 +1,10 @@
-# Comms_LAB — Documentation & SDR Experiments
+# Comms_LAB — SDR Experiments & Documentation
 
 This repository contains a set of software-defined radio (SDR) experiments, code, and documentation developed for the Communications Laboratory (IITH). The work focuses on OFDM-based communications using USRP and Adalm Pluto platforms and investigates physical-layer security (Alice–Bob–Eve scenarios).
 
-This README gives a bird's-eye view of the project, where to find code and data, and how to build the project documentation (PDF). A compiled documentation PDF covering all projects is expected to live alongside these files (see `docs/` or the top-level `DOCS/` folder). 
+**Compiled manual:** `SDR_MANUAL.pdf` is uploaded in this folder — open that PDF to view the full manual and hands-on guides.
+
+This README gives a bird's-eye view of the project, where to find code and data, and how to build the project documentation (PDF).
 
 ---
 
@@ -90,23 +92,10 @@ Troubleshooting tips are included in `cross_platform_pls.tex` and the `main.tex`
 ## Physical-layer security focus
 This repo includes experiments designed to evaluate secrecy capacity, artificial-noise injection, beamforming strategies, and the practical gap between theory and hardware reality. The key research goal is to examine Alice–Bob–Eve scenarios under heterogeneous hardware conditions (e.g., USRP↔Pluto) and report reproducible results.
 
----
 
-## Contributing and licensing
-- If you contribute code: follow the repository layout and add a short README in the project subfolder describing how to run the local experiment.
-- Add data logs (`.mat`) and clearly document which parameters were used when generating them.
-- Please include license and attribution details in a `LICENSE` file if you plan to publish the code.
-
----
 
 ## Contact
 Communications Laboratory — IITH
-Email: your.email@example.com
+Email: ee23btech11015@iith.ac.in or ee23btech11032@iith.ac.in
 
 ---
-
-If you want, I can:
-- Embed snippets from actual `Global_Parameters_PLS.m`, `TX_dual_pluto.m` and `OFDM_RX_Bob.m` into the `cross_platform_pls.tex` report (exact lines) to make the documentation reference live code.
-- Run a local LaTeX compile in the environment (I cannot run builds here, but I can provide exact commands and troubleshoot errors you encounter when compiling locally).
-
-Tell me which next step you prefer.
