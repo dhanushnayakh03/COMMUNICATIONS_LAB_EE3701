@@ -1,0 +1,8 @@
+1. Removed pre-baked channel model
+2. Added Channel estimation instead of assuming channel taps
+3. Improved equaliser with smoothing
+4. Added Noise estimation
+5. More plots
+6. Fixed bugs in code - ex: dimension mismatches
+
+--> Rewritten the source by fixing bugs, Not fixing the source directly
