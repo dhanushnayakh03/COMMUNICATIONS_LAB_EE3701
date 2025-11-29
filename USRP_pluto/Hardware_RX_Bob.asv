@@ -1,0 +1,147 @@
+clear; close all; clc; j = 1i;
+Global_Parameters_PLS;
+
+global state;
+state = 1;  % Running flag
+
+%% GUI
+f = figure('Name', 'Bob RX', 'NumberTitle', 'off', ...
+    'Units', 'centimeters', 'Position', [1 2 55 28]);
+uicontrol('Style', 'pushbutton', 'String', 'Stop!', ...
+    'Position', [1475 15 100 60], 'Callback', @stop_rx);
+
+
+%% Hardware Parameters for Alice (USRP B210)
+
+rx_object_Bob = comm.SDRuReceiver(...
+    'Platform', 'B210', ...
+    'SerialNum', '34414D2', ...
+    'CenterFrequency', 800e6, ...
+    'Gain', 60, ...
+    'MasterClockRate', 30e6, ...
+    'DecimationFactor', 10, ...
+    'ChannelMapping', 1, ...
+    'SamplesPerFrame', 4000, ...
+    'OutputDataType', 'double');
+
+% rx_object_Bob = sdrrx('Pluto', ...
+%     'RadioID', 'usb:0', ...              % Or 'usb:1' if multiple devices
+%     'CenterFrequency', 800e6, ...
+%     'BasebandSampleRate', 3e6, ...       % Must be ≥ 65105 Hz, ≤ 61.44e6 Hz
+%     'GainSource', 'Manual', ...
+%     'Gain', 60, ...                      % Typical range -3 to 73 dB
+%     'SamplesPerFrame', 4000, ...
+%     'OutputDataType', 'double');
+
+
+Ready_Time = 0;
+scale = 1024;
+Run_time_number = 1;
+
+
+disp('Starting continuous reception... Press Stop! or Ctrl+C to stop.');
+
+%% ---- Main Loop ----
+while state
+    
+        [data_rx_raw, len] = rx_object_Bob();
+
+        if len > 0
+            Run_time_number = Run_time_number + 1;
+
+            if Run_time_number > Ready_Time
+                % RX Raw Processing
+                data_rx_scaled = data_rx_raw ./ scale;
+                RX = data_rx_scaled.';
+
+                % ---- Plot only Tx2ry Nth frame ----
+                if mod(Run_time_number, 1) == 0
+                    sample_rate = Parameters_struct.Bandwidth;
+
+                    subplot(3, 4, 1);
+                    plot(RX, '.');
+                    title('RX Raw - Constellation');
+                    axis([-1.5 1.5 -1.5 1.5]); axis square; grid on;
+
+                    subplot(3, 4, 2);
+                    plot(real(RX)); title('RX - I Component');
+                    axis([1 length(RX) -1e-2 1e-2]); grid on;
+
+                    subplot(3, 4, 3);
+                    plot(imag(RX)); title('RX - Q Component');
+                    axis([1 length(RX) -1e-2 1e-2]); grid on;
+
+                    % Power Spectral Density
+                    [Spectrum_waveform, Welch_Spectrum_frequency] = pwelch(RX, [], [], [], sample_rate, 'centered', 'power');
+                    subplot(3, 4, 4);
+                    plot(Welch_Spectrum_frequency/1e6, pow2db(Spectrum_waveform));
+                    title('Welch PSD');
+                    xlabel('Frequency (MHz)'); ylabel('Power (dB)');
+                    axis([-sample_rate/2e6, sample_rate/2e6, -100, -10]); grid on;
+                end
+
+                drawnow limitrate;  % Non-blocking update
+
+                % ---- Processing Section ----
+                [M_n, Threshold_graph, H_Tx1, H_Tx2, channel_correlation, ...
+          RX_Tx_Payload_1, RX_Tx_Payload_2, ...
+          BER_Tx] = OFDM_RX_Bob(RX, Parameters_struct);
+
+                % ---- Update other plots occasionally ----
+                if mod(Run_time_number, 1) == 0
+                    subplot(3, 4, 5);
+                    plot(1:length(M_n), M_n, 1:length(M_n), Threshold_graph);
+                    title('Packet Detection'); axis([1, length(M_n), 0, 1.2]);
+                    legend('M_n', 'Threshold'); grid on;
+
+                    subplot(3, 4, 6);
+                    H_Tx1_taps = H_Tx1(1:Parameters_struct.Lch_Tx1);
+                    stem(0:Parameters_struct.Lch_Tx1-1, abs(H_Tx1_taps), 'b', 'LineWidth', 2);
+                    title('Tx1 Channel Taps'); grid on;
+
+                    subplot(3, 4, 7);
+                    H_Tx2_taps = H_Tx2(1:Parameters_struct.Lch_Tx2);
+                    stem(0:Parameters_struct.Lch_Tx2-1, abs(H_Tx2_taps), 'm', 'LineWidth', 2);
+                    title('Tx2 Channel Taps'); grid on;
+
+                    subplot(3, 4, 8); cla;
+                    text(0.1, 0.8, 'Channel Statistics:', 'FontSize', 12, 'FontWeight', 'bold');
+                    text(0.1, 0.6, sprintf('Correlation: %.4f', channel_correlation), 'FontSize', 10);
+                    text(0.1, 0.5, sprintf('||h_{Tx1}||: %.4f', norm(H_Tx1_taps)), 'FontSize', 10);
+                    text(0.1, 0.4, sprintf('||h_{Tx2}||: %.4f', norm(H_Tx2_taps)), 'FontSize', 10);
+                    text(0.1, 0.2, sprintf('Frame: %d', Run_time_number), 'FontSize', 10);
+                    axis off;
+
+                    subplot(3, 4, 9);
+                    plot([RX_Tx_Payload_1, RX_Tx_Payload_2], '*b', 'MarkerSize', 8);
+                    title(sprintf('Tx After Equalization\nBER = %.4f', BER_Tx));
+                    axis([-1.5 1.5 -1.5 1.5]); axis square; grid on;
+
+                    
+                    subplot(3, 4, 11);
+                    H_Tx1_freq = fft(H_Tx1);
+                    plot(1:Parameters_struct.N_FFT, abs(H_Tx1_freq), 'b');
+                    title('Tx1 Channel - Freq Response'); grid on;
+
+                    subplot(3, 4, 12);
+                    H_Tx2_freq = fft(H_Tx2);
+                    plot(1:Parameters_struct.N_FFT, abs(H_Tx2_freq), 'm');
+                    title('Tx2 Channel - Freq Response'); grid on;
+
+                    drawnow limitrate;
+                end
+            end
+        end
+
+    
+end
+
+release(rx_object_Bob);
+close all;
+disp('Bob Reception Complete');
+
+%% --- Callback Function ---
+function stop_rx(~, ~)
+    global state;
+    state = 0;
+end

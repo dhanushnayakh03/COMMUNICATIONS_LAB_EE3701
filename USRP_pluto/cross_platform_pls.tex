@@ -1,0 +1,187 @@
+\documentclass[11pt, a4paper]{article}
+
+%--- Packages ---
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, breakable}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+%--- Custom Colors ---
+\definecolor{aliceblue}{RGB}{230, 240, 255}
+\definecolor{alicetext}{RGB}{0, 50, 150}
+\definecolor{bobgreen}{RGB}{235, 255, 235}
+\definecolor{bobtext}{RGB}{0, 100, 50}
+\definecolor{conceptgray}{RGB}{245, 245, 245}
+
+%--- Custom Box Definitions ---
+
+% Box for Alice (Transmitter)
+\newtcolorbox{alicebox}[1]{
+    colback=aliceblue,
+    colframe=alicetext,
+    fonttitle=\bfseries\Large,
+    coltitle=white,
+    title={#1},
+    enhanced,
+    attach boxed title to top left={xshift=5mm, yshift=-2mm},
+    boxed title style={colback=alicetext, sharp corners},
+    sharp corners=south,
+    arc=5mm
+}
+
+% Box for Bob (Receiver)
+\newtcolorbox{bobbox}[1]{
+    colback=bobgreen,
+    colframe=bobtext,
+    fonttitle=\bfseries\Large,
+    coltitle=white,
+    title={#1},
+    enhanced,
+    attach boxed title to top right={xshift=-5mm, yshift=-2mm},
+    boxed title style={colback=bobtext, sharp corners},
+    sharp corners=south,
+    arc=5mm
+}
+
+% Box for Key Concepts
+\newtcolorbox{conceptbox}[1]{
+    colback=conceptgray,
+    colframe=black!60,
+    fonttitle=\bfseries,
+    title={#1},
+    leftrule=4pt,
+    arc=2mm
+}
+
+\title{\textbf{\Huge Cross-Platform Comms Manual}\\ \Large Making USRP (Alice) talk to Pluto (Bob)}
+\author{Communications Lab}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{The Big Picture}
+We are building a security system where Alice (USRP B210) sends a secret message using two antennas, and Bob (Adalm Pluto) tries to receive it using one antenna.
+
+\begin{conceptbox}{The Main Challenge}
+The USRP and the Pluto are like two people who speak different dialects and hence different way of handling things. Just to list :
+\begin{itemize}
+    \item \textbf{USRP}Our Alice has to send and receive data and also do channel processing.
+    \item \textbf{Pluto} Bob has to just receive and decode the data.
+\end{itemize}
+To make them understand each other and make good use of the hardware, we must force them to speak at exactly the same speed (3 MHz).
+\end{conceptbox}
+
+\section{Step 1: The Hardware Setup}
+
+We use "Objects" in MATLAB to control the hardware. Here is how we configured them in \texttt{TX\_dual\_pluto.m} and \texttt{Hardware\_RX\_Bob.m}.
+
+\vspace{0.5cm}
+
+\begin{alicebox}{Alice: The Transmitter (USRP B210)}
+Alice is the "Master" of the transmission. She sends two signals at once.
+
+\begin{itemize}
+    \item \textbf{Device:} USRP B210
+    \item \textbf{Goal:} Send separate streams on Antenna 1 and Antenna 2.
+    \item \textbf{The Trick:} We use \textbf{Interpolation} to slow down the internal clock to a speed the Pluto can handle.
+\end{itemize}
+
+\textbf{Key Settings:}
+\begin{enumerate}
+    \item \texttt{MasterClockRate = 30 MHz} (Internal Heartbeat)
+    \item \texttt{InterpolationFactor = 10} (Slow down by 10x)
+    \item \textbf{Resulting Speed:} $30 \text{ MHz} / 10 = \mathbf{3 \text{ MHz}}$
+    \item \texttt{ChannelMapping = [1 2]} (Use both antennas)
+\end{enumerate}
+\end{alicebox}
+
+\vspace{0.5cm}
+
+\begin{bobbox}{Bob: The Receiver (Adalm Pluto)}
+Bob is the listener. He uses a cheaper radio, so we have to tell him exactly what to listen for.
+
+\begin{itemize}
+    \item \textbf{Device:} Adalm Pluto (PlutoSDR)
+    \item \textbf{Goal:} Listen to Alice and separate her two signals.
+    \item \textbf{The Trick:} We force the Pluto's "Baseband Rate" to match Alice exactly.
+\end{itemize}
+
+\textbf{Key Settings:}
+\begin{enumerate}
+    \item \texttt{BasebandSampleRate = 3 MHz} (Must match Alice!)
+    \item \texttt{CenterFrequency = 800 MHz} (Must match Alice)
+    \item \texttt{Gain = 60 dB} (High gain because Pluto is less sensitive)
+\end{enumerate}
+\end{bobbox}
+
+
+\section{Step 2: How Bob Finds the Message}
+
+The air is full of noise. Bob needs a way to know "Hey, a message is starting now!"
+
+\subsection*{The Packet Detection}
+Alice sends a special pattern called a Preamble at the start of every message. This acts like a message to capture the data.
+
+\begin{conceptbox}{Schmidl-Cox Algorithm (Simple Explanation)}
+\begin{enumerate}
+    \item Alice sends a short pattern: \texttt{[A, A, A, A]}.
+    \item Bob constantly compares the signal he just received with the signal he received a split second ago.
+    \item If \textbf{Current Signal} looks exactly like \textbf{Past Signal}, Bob knows it's the repeating preamble.
+    \item \textbf{Math:} We calculate a score $M(n)$. When $M(n) > 0.6$, we trigger the recording.
+\end{enumerate}
+\end{conceptbox}
+
+\section{Step 3: Separating the Two Antennas}
+
+This is the most critical part of Physical Layer Security. Bob has only \textbf{one ear} (antenna), but Alice is speaking with \textbf{two mouths} (Tx1 and Tx2). How does he know who said what?
+
+\subsection*{The "Pilot" Solution}
+We use \textbf{Orthogonal Pilots}.Please refer to the codes in the same folder for more detail.
+
+\begin{center}
+\begin{tabular}{|c|c|c|}
+\hline
+\rowcolor{gray!20} \textbf{Frequency Key} & \textbf{Tx1 Action} & \textbf{Tx2 Action} \\
+\hline
+Key \#16 & \textbf{Signal1} & Silent(Null) \\
+\hline
+Key \#18 & Silent & \textbf{Signal2} \\
+\hline
+Key \#24 & \textbf{Signal1} & Silent \\
+\hline
+Key \#26 & Silent & \textbf{Signal2} \\
+\hline
+\end{tabular}
+\end{center}
+
+\begin{enumerate}
+    \item Bob listens to Key \#16. He hears a sound. Since he knows Tx2 is silent there, \textbf{that sound must describe Tx1's channel.}
+    \item Bob listens to Key \#18. He hears a sound. Since he knows Tx1 is silent there, \textbf{that sound must describe Tx2's channel.}
+\end{enumerate}
+
+\section{Summary: The Code Logic}
+
+Here is the flow of \texttt{OFDM\_RX\_Bob.m} in plain English:
+
+\begin{tcolorbox}[colback=yellow!10, colframe=orange!80!black, title=The Receiver Logic Chain]
+\begin{enumerate}
+    \item \textbf{Wait} for the trigger signal ($M_n > 0.6$).
+    \item \textbf{Cut} the signal into a "Frame" (480 samples).
+    \item \textbf{Correct} the frequency (Pluto and USRP clocks are slightly different, so we rotate the signal back).
+    \item \textbf{Extract} the Pilot Keys (indices 16, 18, 24, etc.).
+    \item \textbf{Calculate} Channel 1 from the Tx1 keys.
+    \item \textbf{Calculate} Channel 2 from the Tx2 keys.
+    \item \textbf{Decode} the secret message using these channel estimates.
+\end{enumerate}
+\end{tcolorbox}
+
+\end{document}
