@@ -47,7 +47,7 @@ Prerequisites:
 Open PowerShell in the `DOCS` folder and run:
 
 ```powershell
-cd 'd:\5th Sem IITH\Comms_LAB\DOCS'
+cd 'path'
 # Build the cross-platform PLS report
 pdflatex cross_platform_pls.tex
 pdflatex cross_platform_pls.tex
@@ -99,3 +99,4 @@ Communications Laboratory — IITH
 Email: ee23btech11015@iith.ac.in or ee23btech11032@iith.ac.in
 
 ---
+
