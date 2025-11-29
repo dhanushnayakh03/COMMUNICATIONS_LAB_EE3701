@@ -1,0 +1,194 @@
+clear; close all; clc; j = 1i;
+Global_Parameters_PLS;
+
+%% Button Setting
+figure('Name', 'Alice RX', 'NumberTitle', 'off');
+button = uicontrol; % Generate GUI button
+set(button, 'String', 'Stop!', 'Position', [1475 15 100 60]); % Add "Stop!" text
+set(gcf, 'Units', 'centimeters', 'position', [1 2 55 28]); % Set the position of GUI
+
+%% Hardware Parameters for Alice (USRP B210)
+% rx_object_Alice = comm.SDRuReceiver(...
+%     'Platform', 'B210', ...
+%     'SerialNum', '3459F2C', ... % Change to your USRP serial number
+%     'CenterFrequency', Parameters_struct.CenterFrequency, ...
+%     'Gain', 50, ... % Adjust gain as needed (0-76 dB for B210)
+%     'DecimationFactor', 1, ...
+%     'SamplesPerFrame', 3000, ...
+%     'ChannelMapping',1, ... % Channel 1 = TX1/RX1 port
+%     'OutputDataType', 'double');
+
+rx_object_Alice = comm.SDRuReceiver(...
+        'Platform', 'B210', ...
+        'SerialNum', '3459F2C', ...
+        'CenterFrequency', 850e6, ...
+        'Gain', 40,...
+        'DecimationFactor', 20, ...
+        'SamplesPerFrame', RxSamples, ...
+        'OutputDataType', 'double', ...
+        'ChannelMapping', 1);  % RX1
+
+Ready_Time = 0;
+scale = 1024;
+
+%% Main Reception Loop
+state = 1; % status Start
+Run_time_number = 1;
+
+while (state == 1)
+    try
+        [data_rx_raw, dataLength] = step(rx_object_Alice);
+        
+        if Run_time_number > Ready_Time
+            % ----- RX Raw Processing -----%
+            data_rx_scaled = data_rx_raw ./ scale; % [3000x1]
+            RX = data_rx_scaled.'; % [1x3000]
+            
+            % Plot Raw RX Signal
+            subplot(3, 4, 1);
+            plot(RX, '.');
+            title('RX Raw - Constellation');
+            axis([-1.5 1.5 -1.5 1.5]);
+            axis square;
+            grid on;
+            
+            subplot(3, 4, 2);
+            plot(real(RX));
+            title('RX - I Component');
+            axis([1 3000 -1.5 1.5]);
+            grid on;
+            
+            subplot(3, 4, 3);
+            plot(imag(RX));
+            title('RX - Q Component');
+            axis([1 3000 -1.5 1.5]);
+            grid on;
+            
+            % Power Spectral Density
+            sample_rate = Parameters_struct.Bandwidth; % Use bandwidth as sample rate
+            [Spectrum_waveform, Welch_Spectrum_frequency] = pwelch(RX, [], [], [], ...
+                sample_rate, 'centered', 'power');
+            subplot(3, 4, 4);
+            plot(Welch_Spectrum_frequency/1e6, pow2db(Spectrum_waveform));
+            title('Welch PSD');
+            xlabel('Frequency (MHz)');
+            ylabel('Power (dB)');
+            axis([-sample_rate/2e6, sample_rate/2e6, -100, -10]);
+            grid on;
+            
+            drawnow;
+            
+            % ----- Demodulation and Channel Estimation -----%
+            [M_n, Threshold_graph, H_Bob, H_Eve, channel_correlation, ...
+             RX_Bob_Payload_1, RX_Bob_Payload_2, RX_Eve_Payload_1, RX_Eve_Payload_2, ...
+             BER_Bob, BER_Eve] = OFDM_RX_Alice(RX, Parameters_struct);
+            
+            % Packet Detection
+            subplot(3, 4, 5);
+            plot(1:length(M_n), M_n, 1:length(M_n), Threshold_graph);
+            title('Packet Detection');
+            axis([1, length(M_n), 0, 1.2]);
+            legend('M_n', 'Threshold', 'Location', 'best');
+            grid on;
+            
+            % Bob's Channel (Time Domain)
+            subplot(3, 4, 6);
+            H_Bob_taps = H_Bob(1:Parameters_struct.Lch_Bob);
+            stem(0:Parameters_struct.Lch_Bob-1, abs(H_Bob_taps), 'b', 'LineWidth', 2);
+            title('Bob Channel Taps');
+            xlabel('Tap Index');
+            ylabel('Magnitude');
+            grid on;
+            
+            % Eve's Channel (Time Domain)
+            subplot(3, 4, 7);
+            H_Eve_taps = H_Eve(1:Parameters_struct.Lch_Eve);
+            stem(0:Parameters_struct.Lch_Eve-1, abs(H_Eve_taps), 'm', 'LineWidth', 2);
+            title('Eve Channel Taps');
+            xlabel('Tap Index');
+            ylabel('Magnitude');
+            grid on;
+            
+            % Channel Statistics
+            subplot(3, 4, 8);
+            cla;
+            text(0.1, 0.8, 'Channel Statistics:', 'FontSize', 12, 'FontWeight', 'bold');
+            text(0.1, 0.6, sprintf('Correlation: %.4f', channel_correlation), 'FontSize', 10);
+            text(0.1, 0.5, sprintf('||h_{Bob}||: %.4f', norm(H_Bob_taps)), 'FontSize', 10);
+            text(0.1, 0.4, sprintf('||h_{Eve}||: %.4f', norm(H_Eve_taps)), 'FontSize', 10);
+            text(0.1, 0.2, sprintf('Frame: %d', Run_time_number), 'FontSize', 10, 'Color', [0.5 0.5 0.5]);
+            axis off;
+            
+            % Bob's Equalized Constellation
+            subplot(3, 4, 9);
+            plot([RX_Bob_Payload_1, RX_Bob_Payload_2], '*b', 'MarkerSize', 8);
+            title(sprintf('Bob After Equalization\nBER = %.4f', BER_Bob));
+            axis([-1.5 1.5 -1.5 1.5]);
+            axis square;
+            grid on;
+            
+            % Eve's Equalized Constellation
+            subplot(3, 4, 10);
+            plot([RX_Eve_Payload_1, RX_Eve_Payload_2], '*m', 'MarkerSize', 8);
+            title(sprintf('Eve After Equalization\nBER = %.4f', BER_Eve));
+            axis([-1.5 1.5 -1.5 1.5]);
+            axis square;
+            grid on;
+            
+            % Bob's Frequency Response
+            subplot(3, 4, 11);
+            H_Bob_freq = fft(H_Bob);
+            plot(1:Parameters_struct.N_FFT, abs(H_Bob_freq), 'b', 'LineWidth', 1.5);
+            hold on;
+            stem(Parameters_struct.Bob_pilot_idx, abs(H_Bob_freq(Parameters_struct.Bob_pilot_idx)), ...
+                'r', 'LineWidth', 2);
+            hold off;
+            title('Bob Channel - Freq Response');
+            xlabel('Subcarrier');
+            ylabel('|H|');
+            legend('Estimated H', 'Pilot Locations', 'Location', 'best');
+            grid on;
+            
+            % Eve's Frequency Response
+            subplot(3, 4, 12);
+            H_Eve_freq = fft(H_Eve);
+            plot(1:Parameters_struct.N_FFT, abs(H_Eve_freq), 'm', 'LineWidth', 1.5);
+            hold on;
+            stem(Parameters_struct.Eve_pilot_idx, abs(H_Eve_freq(Parameters_struct.Eve_pilot_idx)), ...
+                'r', 'LineWidth', 2);
+            hold off;
+            title('Eve Channel - Freq Response');
+            xlabel('Subcarrier');
+            ylabel('|H|');
+            legend('Estimated H', 'Pilot Locations', 'Location', 'best');
+            grid on;
+            
+            drawnow;
+            
+            Run_time_number = Run_time_number + 1;
+        end % Start
+        
+        if Run_time_number <= Ready_Time  % Ready
+            % disp('Ready');
+        end
+        Run_time_number = Run_time_number + 1;
+        
+        % ----- Button Behavior -----%
+        set(button, 'Callback', 'setstate0_RX_Alice'); % Set the reaction of pushing button
+        
+    catch ME
+        ErrorMessage = ME.message;
+        fprintf('Error Message : \n');
+        disp(ErrorMessage);
+        fprintf(2, 'Error occurred & Stop Hardware\n');
+        
+        % ----- Error Handling -----%
+        % release(rx_object_Alice);
+        % state = 0;
+        
+    end % Error control
+end % While
+
+release(rx_object_Alice);
+close all;
+disp('Alice Reception Complete');
