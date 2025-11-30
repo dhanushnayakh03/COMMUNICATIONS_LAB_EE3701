@@ -98,5 +98,7 @@ This repo includes experiments designed to evaluate secrecy capacity, artificial
 Communications Laboratory — IITH
 Email: ee23btech11015@iith.ac.in or ee23btech11032@iith.ac.in
 
+Note: This project was originally based on an existing open-source implementation. We have modified, extended, and restructured the code for my learning and experimentation. Original source: https://github.com/MeowLucian/SDR_Matlab_OFDM_802.11n.
 ---
+
 
